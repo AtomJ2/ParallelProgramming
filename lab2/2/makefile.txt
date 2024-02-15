@@ -1,0 +1,10 @@
+CC = g++
+CFLAGS = -std=c++11 -fopenmp
+
+TARGET = program
+
+$(TARGET): main.cpp
+	$(CC) $(CFLAGS) -o $(TARGET) main.cpp
+
+clean:
+	rm -f $(TARGET)

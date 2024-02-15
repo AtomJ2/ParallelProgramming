@@ -1,0 +1,1 @@
+/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/compilers/bin/nvc++  -fopenmp CMakeFiles/computional_node.dir/computional_node.cpp.o -o computional_node 

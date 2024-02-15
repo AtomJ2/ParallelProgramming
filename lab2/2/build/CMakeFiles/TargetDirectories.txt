@@ -1,0 +1,4 @@
+/home/y.chekanov/lab2/2/build/CMakeFiles/main.dir
+/home/y.chekanov/lab2/2/build/CMakeFiles/computional_node.dir
+/home/y.chekanov/lab2/2/build/CMakeFiles/edit_cache.dir
+/home/y.chekanov/lab2/2/build/CMakeFiles/rebuild_cache.dir
