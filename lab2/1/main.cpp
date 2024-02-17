@@ -3,6 +3,7 @@
 #include <vector>
 #include <chrono>
 
+/*
 std::string executeCommand(const std::string& command) {
     std::string result = "";
     char buffer[128];
@@ -15,26 +16,31 @@ std::string executeCommand(const std::string& command) {
     }
     return result;
 }
+*/
 
-void matrix_vector_mult_omp(int num_threads, int matrix_size) {
-    std::vector<std::vector<double>> matrix(matrix_size, std::vector<double>(matrix_size));
-    std::vector<double> vector(matrix_size);
-    std::vector<double> result(matrix_size);
-
-#pragma omp parallel for num_threads(num_threads)
+void init(std::vector<std::vector<double>>& matrix, std::vector<double>& vector, int matrix_size) {
+#pragma omp parallel for
     for (int i = 0; i < matrix_size; i++) {
         for (int j = 0; j < matrix_size; j++)
             matrix[i][j] = i + j;
         vector[i] = i;
     }
+}
 
-#pragma omp parallel for num_threads(num_threads)
-    for (int i = 0; i < matrix_size; i++)
-        for (int j = 0; j < matrix_size; j++)
-            result[i] += matrix[i][j] * vector[j];
+void multiplication(int num_threads, std::vector<std::vector<double>> matrix, std::vector<double> vector, int threads) {
+#pragma omp parallel num_threads(threads)
+    {
+#pragma omp for schedule(guided)
+        for (int i = 0; i < matrix.size(); i++) {
+            for (int j = 0; j < matrix.size(); j++) {
+                matrix[i][j] *= vector[j];
+            }
+        }
+    }
 }
 
 int main() {
+    /*
     std::string cpuInfo = executeCommand("lscpu");
     std::string serverName = executeCommand("cat /sys/devices/virtual/dmi/id/product_name");
     std::string numaInfo = executeCommand("numactl --hardware");
@@ -44,6 +50,7 @@ int main() {
     std::cout << "Server: " << serverName << std::endl;
     std::cout << "NUMA-nodes info:\n" << numaInfo << std::endl;
     std::cout << "OS info:\n" << osInfo << std::endl;
+    */
 
     //-------------------------------------------------------------------------------------------------
 
@@ -54,13 +61,28 @@ int main() {
 
     for (int i = 0; i < num_threads.size(); i++) {
         for (int j = 0; j < matrix_sizes.size(); j++) {
-            int num_thread = num_threads[i];
+            int threads = num_threads[i];
             int matrix_size = matrix_sizes[j];
 
-            omp_set_num_threads(num_thread);
+            // omp_set_num_threads(threads);
+
+            std::vector<std::vector<double>> matrix(matrix_size, std::vector<double>(matrix_size));
+            std::vector<double> vector(matrix_size);
+
+            init(matrix, vector, matrix_size);
 
             auto start_time = std::chrono::high_resolution_clock::now();
-            matrix_vector_mult_omp(num_thread, matrix_size);
+
+#pragma omp parallel num_threads(threads)
+            {
+#pragma omp for schedule(guided)
+                for (int q = 0; q < matrix_size; q++)
+                    for (int w = 0; w < matrix_size; w++)
+                        matrix[q][w] *= vector[w];
+            }
+
+//            multiplication(threads, matrix, vector, threads);
+
             auto end_time = std::chrono::high_resolution_clock::now();
             double runtime = std::chrono::duration<double>(end_time - start_time).count();
 
@@ -70,8 +92,8 @@ int main() {
             j == 1 ? speedup = runtimes[0][1] / runtime : speedup = runtimes[0][0] / runtime;
             speedups[i][j] = speedup;
 
-            std::cout << "Runtime with " << num_thread << " threads and matrix size " << matrix_size << ": " << runtime << " seconds" << std::endl;
-            std::cout << "Speedup with " << num_thread << " threads and matrix size " << matrix_size << ": " << speedup << std::endl << std::endl;
+            std::cout << "Runtime with " << threads << " threads and matrix size " << matrix_size << ": " << runtime << " seconds" << std::endl;
+            std::cout << "Speedup with " << threads << " threads and matrix size " << matrix_size << ": " << speedup << std::endl << std::endl;
         }
     }
 
