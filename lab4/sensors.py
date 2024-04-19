@@ -1,20 +1,23 @@
 import argparse
-import multiprocessing
+import threading
 import time
 import cv2
 import logging
 import sys
-
+import queue
 
 logging.basicConfig(filename='app.log', level=logging.INFO)
+flag = True
+
 
 class Sensor:
     def get(self):
         raise NotImplementedError("Subclasses must implement method get()")
 
-    
+
 class SensorX(Sensor):
     """Sensor X"""
+
     def __init__(self, delay: float):
         self._delay = delay
         self._data = 0
@@ -36,14 +39,10 @@ class SensorCam(Sensor):
 
     def get(self):
         ret, frame = self.cap.read()
-        # if not ret or not self.cap.isOpened() or not self.cap.grab():
-        #     cv2.destroyAllWindows()
-        #     logging.info('The camera was turned off.')
-        #     sys.exit()
 
-        return frame
+        return frame, ret
 
-    def __del__(self):
+    def release(self):
         self.cap.release()
 
 
@@ -63,70 +62,69 @@ class WindowImage:
         cv2.putText(img, text3, (x, y + 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
         cv2.imshow("window", img)
 
-    def __del__(self):
+    def close(self):
         cv2.destroyWindow("window")
 
 
 def process(que, sensor):
-    while True:
+    global flag
+    while flag:
         new_sens = sensor.get()
         if que.empty():
             que.put(new_sens)
 
 
 def main(args):
-    picsize = (int(args.res.split('*')[0]), int(args.res.split('*')[1]))
+    global flag
+    shapes = (int(args.res.split('*')[0]), int(args.res.split('*')[1]))
     sensor1 = SensorX(1)
     sensor2 = SensorX(0.1)
     sensor3 = SensorX(0.01)
     window = WindowImage(args.freq)
-    camera = SensorCam(args.cam, picsize)
+    camera = SensorCam(args.cam, shapes)
 
     if not camera.cap.isOpened():
         logging.info('The camera is turned off.')
+        camera.release()
+        window.close()
         sys.exit()
 
-    que1 = multiprocessing.Queue()
-    que2 = multiprocessing.Queue()
-    que3 = multiprocessing.Queue()
+    queue1 = queue.Queue()
+    queue2 = queue.Queue()
+    queue3 = queue.Queue()
 
-    process1 = multiprocessing.Process(target=process, args=(que1, sensor1))
-    process2 = multiprocessing.Process(target=process, args=(que2, sensor2))
-    process3 = multiprocessing.Process(target=process, args=(que3, sensor3))
+    thread1 = threading.Thread(target=process, args=(queue1, sensor1))
+    thread2 = threading.Thread(target=process, args=(queue2, sensor2))
+    thread3 = threading.Thread(target=process, args=(queue3, sensor3))
 
-    process1.start()
-    process2.start()
-    process3.start()
+    thread1.start()
+    thread2.start()
+    thread3.start()
 
-    sens1 = sens2 = sens3 = 0
+    sensor1 = sensor2 = sensor3 = 0
     while True:
-        ret, frame = camera.cap.read()
+        if not queue1.empty():
+            sensor1 = queue1.get()
+        if not queue2.empty():
+            sensor2 = queue2.get()
+        if not queue3.empty():
+            sensor3 = queue3.get()
+        sensim, ret = camera.get()
         if not ret or not camera.cap.isOpened() or not camera.cap.grab():
-            logging.info('The camera was turned off.')
-            process1.terminate()
-            process2.terminate()
-            process3.terminate()
+            logging.info('The camera had turned off.')
+            camera.release()
+            window.close()
+            flag = False
             sys.exit()
-        if not que1.empty():
-            sens1 = que1.get()
-        if not que2.empty():
-            sens2 = que2.get()
-        if not que3.empty():
-            sens3 = que3.get()
-        sensim = camera.get()
 
-        window.show(sensim, sens1, sens2, sens3)
-        time.sleep(1 / args.freq)
+        window.show(sensim, sensor1, sensor2, sensor3)
+        time.sleep(1 / window.freq)
 
         if cv2.waitKey(1) == ord('q'):
-            break
-
-    process1.terminate()
-    process2.terminate()
-    process3.terminate()
-    process1.join()
-    process2.join()
-    process3.join()
+            camera.release()
+            window.close()
+            flag = False
+            sys.exit()
 
 
 if __name__ == '__main__':
