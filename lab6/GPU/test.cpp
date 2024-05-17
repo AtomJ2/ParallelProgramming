@@ -70,34 +70,35 @@ int main(int argc, char* argv[]) {
 
     printf("Jacobi relaxation Calculation: %d x %d mesh\n", n, n);
 
-    auto start_time = std::chrono::high_resolution_clock::now();
     int iter = 0;
-    #pragma acc data copyin(A[:n*n],Anew[:n*n],error) {
+    auto start_time = std::chrono::high_resolution_clock::now();
+    #pragma acc data copyin(A[:n*n],Anew[:n*n],err) 
+    {
         while (err > precision && iter < iterations_max) {
-        if (iter % 10000 == 0) {
+            if (iter % 1000 == 0) {
             err = 0.0;
-                #pragma acc update device(error) async(1)
-                #pragma acc parallel loop independent collapse(2) vector vector_length(n) gang num_gangs(n) reduction(max:error) present(A,Anew)
+                #pragma acc update device(err) async(1)
+                #pragma acc parallel loop independent collapse(2) vector vector_length(n) gang num_gangs(n) reduction(max:err) present(A,Anew)
                 for (int j = 1; j < n - 1; j++)
                     for (int i = 1; i < n - 1; i++) {
                         Anew[OFFSET(j, i, n)] = (A[OFFSET(j, i + 1, n)] + A[OFFSET(j, i - 1, n)]
-                                                    + A[OFFSET(j - 1, i, n)] + A[OFFSET(j + 1, i,n)]) * 0.25;
+                                                    + A[OFFSET(j - 1, i, n)] + A[OFFSET(j + 1, i, n)]) * 0.25;
 
                         err = fmax(err, fabs(Anew[OFFSET(j, i, n)] - A[OFFSET(j, i , n)]));
                             
                     }
-                #pragma acc update host(error) async(1)	
+                #pragma acc update host(err) async(1)	
                 #pragma acc wait(1)
                 printf("%5d, %0.6f\n", iter, err);
             }
             else {
                 #pragma acc parallel loop independent collapse(2) vector vector_length(n) gang num_gangs(n) present(A,Anew)
                 for (int j = 1; j < n - 1; j++)
-                    for (int i = 1; i < n - 1; i++) {
+                    for (int i = 1; i < n - 1; i++)
                         Anew[OFFSET(j, i, n)] = ( A[OFFSET(j, i + 1, n)] + A[OFFSET(j, i - 1, n)]
                                                     + A[OFFSET(j - 1, i, n)] + A[OFFSET(j + 1, i,n)]) * 0.25;
-                    }
             }        
+            
             double* temp = A;
             A = Anew;
             Anew = temp;
