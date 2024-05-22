@@ -31,8 +31,6 @@ void init(std::unique_ptr<double[]> &A, std::unique_ptr<double[]> &Anew, int n) 
         A[n * (n - 1) + i] = corners[3] + i * step;
     }
     std::memcpy(Anew.get(), A.get(), n * n * sizeof(double));
-
-
 }
 
 
@@ -67,12 +65,11 @@ int main(int argc, char* argv[]) {
     
     cublasHandle_t handler;
 	cublasStatus_t status;
-
 	double err = 1.0;
 	int iter = 0, idx = 0;
 	double alpha = -1.0;
-
 	status = cublasCreate(&handler);
+	
     if (status != CUBLAS_STATUS_SUCCESS) {
         std::cerr << "cublasCreate failed with err code: " << status << std::endl;
         return 13;
@@ -111,7 +108,7 @@ int main(int argc, char* argv[]) {
                     exit (13);
                 }
                 printf("%5d, %0.6f\n", iter, err);
-			}
+	    }
             double* temp = A;
             A = Anew;
             Anew = temp;
