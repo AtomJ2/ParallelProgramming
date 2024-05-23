@@ -74,35 +74,35 @@ int main(int argc, char* argv[]) {
         std::cerr << "cublasCreate failed with err code: " << status << std::endl;
         return 13;
     }
-    #pragma acc data copyin(A[:n*n],Anew[:n*n], alpha, n, idx)
+    #pragma acc data copyin(A[:n*n],Anew[:n*n], alpha, n, idx) // копирование данных на устройство перед началом распараллеливания
     {
         auto start_time = std::chrono::high_resolution_clock::now();
         while (err > precision && iter < iter_max) {
-            #pragma acc parallel loop independent collapse(2) vector vector_length(n) gang num_gangs(n) present(A,Anew)
+            #pragma acc parallel loop independent collapse(2) vector vector_length(n) gang num_gangs(n) present(A, Anew) // parallel loop - распараллелить следующие циклы, independent - независимые вычисления в итерациях, collapse - объединить циклы, vector vector_length - векторные вычисления, gang num_gangs - разбить на группы потоков, present - данные присутствуют на устройстве
             for (int j = 1; j < n - 1; j++)
                 for (int i = 1; i < n - 1; i++)
                     Anew[OFFSET(j, i, n)] = ( A[OFFSET(j, i + 1, n)] + A[OFFSET(j, i - 1, n)] + A[OFFSET(j - 1, i, n)] + A[OFFSET(j + 1, i, n)]) * 0.25;
             if (iter % 1000 == 0) {
-                #pragma acc data present (A, Anew) wait
-                #pragma acc host_data use_device(A, Anew)
+                #pragma acc data present (A, Anew) wait // ожидания завершения асинхронных операций
+                #pragma acc host_data use_device(A, Anew) // host_data - следующий блок кода выполняется на хосте, но будет использовать указатели на данные с устройства, use_device(A, Anew) - для A и Anew должны быть использованы указатели с устройства
                 {
-                    status = cublasDaxpy(handler, n * n, &alpha, Anew, 1, A, 1);
+                    status = cublasDaxpy(handler, n * n, &alpha, Anew, 1, A, 1); // alpha*Anew + A, записывается в A
                     if (status != CUBLAS_STATUS_SUCCESS) {
                         std::cerr << "cublasDaxpy failed with err code: " << status << std::endl;
                         exit (13);
                     }
-                    status = cublasIdamax(handler, n * n, A, 1, &idx);
+                    status = cublasIdamax(handler, n * n, A, 1, &idx); // в idx - индекс максимального элемента из A, шаг 1, кол-во элементов n*n
                     if (status != CUBLAS_STATUS_SUCCESS) {
                         std::cerr << "cublasIdamax failed with err code: " << status << std::endl;
                         exit (13);
                     }
                 }
 
-                #pragma acc update host(A[idx - 1])
+                #pragma acc update host(A[idx - 1]) // переносит на хост
                 err = std::fabs(A[idx - 1]);
 
                 #pragma acc host_data use_device(A, Anew)
-                status = cublasDcopy(handler, n * n, Anew, 1, A, 1);
+                status = cublasDcopy(handler, n * n, Anew, 1, A, 1); // копирование из Anew в A
                 if (status != CUBLAS_STATUS_SUCCESS) {
                     std::cerr << "cublasDcopy failed with err code: " << status << std::endl;
                     exit (13);
