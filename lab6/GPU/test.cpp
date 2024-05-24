@@ -13,7 +13,7 @@ namespace po = boost::program_options;
 #define OFFSET(x, y, m) (((x) * (m)) + (y))
 
 
-void initialize(std::unique_ptr<double[]> &A, std::unique_ptr<double[]> &Anew, int n) {
+void init(std::unique_ptr<double[]> &A, std::unique_ptr<double[]> &Anew, int n) {
     memset(A.get(), 0, n * n * sizeof(double));
 
     double corners[4] = {10, 20, 30, 20};
@@ -63,7 +63,7 @@ int main(int argc, char* argv[]) {
 
     std::unique_ptr<double[]> A_ptr(new double[n*n]);
     std::unique_ptr<double[]> Anew_ptr(new double[n*n]);
-    initialize(std::ref(A_ptr), std::ref(Anew_ptr), n);
+    init(std::ref(A_ptr), std::ref(Anew_ptr), n);
 
     double* A = A_ptr.get();
     double* Anew = Anew_ptr.get();
