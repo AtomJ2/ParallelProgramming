@@ -65,6 +65,12 @@ __global__ void calc_mean(double *A, double *Anew, int m, bool flag) {
 }
 
 
+void f_exception(std::string message, int row) {
+    printf("%s at the %d line\n", message, row);
+    exit(-1);
+}
+
+
 int main(int argc, char **argv) {
     int m = 1024;
     int iter_max = 1000000;
@@ -117,12 +123,22 @@ int main(int argc, char **argv) {
     std::memcpy(Anew, A, m * m * sizeof(double));
     nvtxRangePop();
 
+    std::string cudaMalloc_err = "cudaMalloc error";
+    std::string cudaMemcpy_err = "cudaMemcpy error";
+    std::string cudaGraphLaunch_err = "cudaGraphLaunch error";
+    std::string cudaStreamBeginCapture_err = "cudaStreamBeginCapture error";
+    std::string cudaStreamEndCapture_err = "cudaStreamEndCapture error";
+    std::string cudaGraphInstantiate_err = "cudaGraphInstantiate error";
+    std::string cudaStreamCreate_err = "cudaStreamCreate error";
+
     dim3 grid(64, 64);
     dim3 block(16, 16);
 
     cudaError_t cudaErr = cudaSuccess;
     cudaStream_t stream;
-    cudaStreamCreate(&stream);
+    
+    cudaErr = cudaStreamCreate(&stream);
+    if (cudaErr) f_exception(cudaStreamCreate_err, 139);
 
     cuda_unique_ptr<double> d_unique_ptr_error(cuda_new<double>(0), cuda_free<double>);
     cuda_unique_ptr<void> d_unique_ptr_temp_storage(cuda_new<void>(0), cuda_free<void>);
@@ -134,24 +150,31 @@ int main(int argc, char **argv) {
     // выделение памяти и перенос на устройство
     double *d_error_ptr = d_unique_ptr_error.get();
     cudaErr = cudaMalloc((void**)&d_error_ptr, sizeof(double));
+    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err, 149);
 
     double *d_A = d_unique_ptr_A.get();
     cudaErr = cudaMalloc((void **)&d_A, m * m * sizeof(double));
+    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err, 153);
 
     double *d_Anew = d_unique_ptr_Anew.get();
     cudaErr = cudaMalloc((void **)&d_Anew, m * m * sizeof(double));
+    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err, 157);
 
     double *d_subtr_temp = d_unique_ptr_subtr_temp.get();
     cudaErr = cudaMalloc((void **)&d_subtr_temp, m * m * sizeof(double));
+    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err, 161);
 
     cudaErr = cudaMemcpy(d_A, A, m * m * sizeof(double), cudaMemcpyHostToDevice);
+    if (cudaErr != cudaSuccess) f_exception(cudaMemcpy_err, 164);
     cudaErr = cudaMemcpy(d_Anew, Anew, m * m * sizeof(double), cudaMemcpyHostToDevice);
+    if (cudaErr != cudaSuccess) f_exception(cudaMemcpy_err, 166);
 
     // проверка памяти для редукции
     void *d_temp_storage = d_unique_ptr_temp_storage.get();
     size_t temp_storage_bytes = 0;
     cub::DeviceReduce::Max(d_temp_storage, temp_storage_bytes, d_Anew, d_error_ptr, m * m, stream);
-    cudaMalloc((void**)&d_temp_storage, temp_storage_bytes);
+    cudaErr = cudaMalloc((void**)&d_temp_storage, temp_storage_bytes);
+    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err, 173);
 
     printf("Jacobi relaxation Calculation: %d x %d mesh\n", m, m);
 
@@ -168,19 +191,23 @@ int main(int argc, char **argv) {
             nvtxRangePushA("createGraph");
             // начало захвата операций на потоке stream
             cudaErr = cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal);
+            if (cudaErr != cudaSuccess) f_exception(cudaStreamBeginCapture_err, 190);
             for (int i = 0; i < 100; i++)
                 calc_mean<<<grid, block, 0, stream>>>(d_A, d_Anew, m, (i % 2 == 1));
             // завершение захвата операций
             cudaErr = cudaStreamEndCapture(stream, &graph);
+            if (cudaErr != cudaSuccess) f_exception(cudaStreamEndCapture_err, 195);
             nvtxRangePop();
             // создаем исполняемый граф
             cudaErr = cudaGraphInstantiate(&instance, graph, NULL, NULL, 0);
+            if (cudaErr != cudaSuccess) f_exception(cudaGraphInstantiate_err, 199);
             graph_created = true;
         }
         // старт графа
         nvtxRangePushA("startGraph");
         // запускаем исполняемый граф
         cudaErr = cudaGraphLaunch(instance, stream);
+        if (cudaErr != cudaSuccess) f_exception(cudaGraphLaunch_err, 206);
         nvtxRangePop();
         iter += 100;
         if (iter % 100 == 0){
@@ -188,6 +215,7 @@ int main(int argc, char **argv) {
             subtr_arr<<<grid, block, 0, stream>>>(d_A, d_Anew, d_subtr_temp, m);
             cub::DeviceReduce::Max(d_temp_storage, temp_storage_bytes, d_subtr_temp, d_error_ptr, m * m, stream);
             cudaErr = cudaMemcpy(&err, d_error_ptr, sizeof(double), cudaMemcpyDeviceToHost);
+            if (cudaErr != cudaSuccess) f_exception(cudaMemcpy_err, 214);
             nvtxRangePop();
         }
         if (iter % 1000 == 0)
@@ -200,6 +228,7 @@ int main(int argc, char **argv) {
 
     printf("total: %f s\n", runtime.count());
     cudaErr = cudaMemcpy(A, d_A, m * m * sizeof(double), cudaMemcpyDeviceToHost);
+    if (cudaErr) f_exception(cudaMemcpy_err, 227);
 
     // std::ofstream out("out.txt");
     // for (int i = 0; i < m; i++){
