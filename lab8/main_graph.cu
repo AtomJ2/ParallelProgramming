@@ -47,7 +47,7 @@ __global__ void subtr_arr(const double *A, const double *Anew, double *subtr_res
     int i = blockDim.x * blockIdx.x + threadIdx.x;
     int j = blockDim.y * blockIdx.y + threadIdx.y;
     if ((i >= 0) && (i < m) && (j >= 0) && (j < m))
-        subtr_res[OFFSET(i, j, m)] = A[OFFSET(i, j, m)] - Anew[OFFSET(i, j, m)];
+        subtr_res[OFFSET(i, j, m)] = fabs(A[OFFSET(i, j, m)] - Anew[OFFSET(i, j, m)]);
 }
 
 
@@ -66,7 +66,7 @@ __global__ void calc_mean(double *A, double *Anew, int m, bool flag) {
 
 
 int main(int argc, char **argv) {
-    int m = 128;
+    int m = 1024;
     int iter_max = 1000000;
     double precision = 1.0e-6;
     double err = 1.0;
@@ -129,7 +129,7 @@ int main(int argc, char **argv) {
 
     cuda_unique_ptr<double> d_unique_ptr_A(cuda_new<double>(0), cuda_free<double>);
     cuda_unique_ptr<double> d_unique_ptr_Anew(cuda_new<double>(0), cuda_free<double>);
-    cuda_unique_ptr<double> d_unique_ptr_Subtract_temp(cuda_new<double>(0), cuda_free<double>);
+    cuda_unique_ptr<double> d_unique_ptr_subtr_temp(cuda_new<double>(0), cuda_free<double>);
 
     // выделение памяти и перенос на устройство
     double *d_error_ptr = d_unique_ptr_error.get();
@@ -141,16 +141,16 @@ int main(int argc, char **argv) {
     double *d_Anew = d_unique_ptr_Anew.get();
     cudaErr = cudaMalloc((void **)&d_Anew, m * m * sizeof(double));
 
-    double *d_Subtract_temp = d_unique_ptr_Subtract_temp.get();
-    cudaErr = cudaMalloc((void **)&d_Subtract_temp, m * m * sizeof(double));
+    double *d_subtr_temp = d_unique_ptr_subtr_temp.get();
+    cudaErr = cudaMalloc((void **)&d_subtr_temp, m * m * sizeof(double));
 
-    cudaErr = cudaMemcpyAsync(d_A, A, m * m * sizeof(double), cudaMemcpyHostToDevice, stream);
-    cudaErr = cudaMemcpyAsync(d_Anew, Anew, m * m * sizeof(double), cudaMemcpyHostToDevice, stream);
+    cudaErr = cudaMemcpy(d_A, A, m * m * sizeof(double), cudaMemcpyHostToDevice);
+    cudaErr = cudaMemcpy(d_Anew, Anew, m * m * sizeof(double), cudaMemcpyHostToDevice);
 
     // проверка памяти для редукции
     void *d_temp_storage = d_unique_ptr_temp_storage.get();
     size_t temp_storage_bytes = 0;
-    cub::DeviceReduce::Max(d_temp_storage, temp_storage_bytes, d_Anew, d_error_ptr, m*m, stream);
+    cub::DeviceReduce::Max(d_temp_storage, temp_storage_bytes, d_Anew, d_error_ptr, m * m, stream);
     cudaMalloc((void**)&d_temp_storage, temp_storage_bytes);
 
     printf("Jacobi relaxation Calculation: %d x %d mesh\n", m, m);
@@ -166,24 +166,28 @@ int main(int argc, char **argv) {
     while (err > precision && iter < iter_max) {
         if(!graph_created) {
             nvtxRangePushA("createGraph");
+            // начало захвата операций на потоке stream
             cudaErr = cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal);
             for (int i = 0; i < 100; i++)
-                calc_mean<<<grid, block, 0, stream>>>(d_A, d_Anew, m, (bool)(i % 2));
+                calc_mean<<<grid, block, 0, stream>>>(d_A, d_Anew, m, (i % 2 == 1));
+            // завершение захвата операций
             cudaErr = cudaStreamEndCapture(stream, &graph);
             nvtxRangePop();
+            // создаем исполняемый граф
             cudaErr = cudaGraphInstantiate(&instance, graph, NULL, NULL, 0);
             graph_created = true;
         }
         // старт графа
         nvtxRangePushA("startGraph");
+        // запускаем исполняемый граф
         cudaErr = cudaGraphLaunch(instance, stream);
         nvtxRangePop();
         iter += 100;
         if (iter % 100 == 0){
             nvtxRangePushA("calcError");
-            subtr_arr<<<grid, block, 0, stream>>>(d_A, d_Anew, d_Subtract_temp, m);
-            cub::DeviceReduce::Max(d_temp_storage, temp_storage_bytes, d_Subtract_temp, d_error_ptr, m * m, stream);
-            cudaErr = cudaMemcpyAsync(&err, d_error_ptr, sizeof(double), cudaMemcpyDeviceToHost, stream);
+            subtr_arr<<<grid, block, 0, stream>>>(d_A, d_Anew, d_subtr_temp, m);
+            cub::DeviceReduce::Max(d_temp_storage, temp_storage_bytes, d_subtr_temp, d_error_ptr, m * m, stream);
+            cudaErr = cudaMemcpy(&err, d_error_ptr, sizeof(double), cudaMemcpyDeviceToHost);
             nvtxRangePop();
         }
         if (iter % 1000 == 0)
