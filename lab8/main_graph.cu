@@ -15,17 +15,13 @@
 #include <cub/block/block_reduce.cuh>
 #include <cub/block/block_store.cuh>
 
-
 #define OFFSET(x, y, m) (((x) * (m)) + (y))
-
 
 namespace po = boost::program_options;
 
-
 // указатель для управления памятью на устройстве
 template<typename T>
-using cuda_unique_ptr = std::unique_ptr<T,std::function<void(T*)>>;
-
+using cuda_unique_ptr = std::unique_ptr<T, std::function<void(T*)>>;
 
 // выделение памяти на устройстве
 template<typename T>
@@ -35,21 +31,18 @@ T* cuda_new(size_t size) {
     return d_ptr;
 }
 
-
 // освобождение ресурсов
 template<typename T>
 void cuda_free(T *dev_ptr) {
     cudaFree(dev_ptr);
 }
 
-
-__global__ void subtr_arr(const double *A, const double *Anew, double *subtr_res , int m) {
+__global__ void subtr_arr(const double *A, const double *Anew, double *subtr_res, int m) {
     int i = blockDim.x * blockIdx.x + threadIdx.x;
     int j = blockDim.y * blockIdx.y + threadIdx.y;
     if ((i >= 0) && (i < m) && (j >= 0) && (j < m))
         subtr_res[OFFSET(i, j, m)] = fabs(A[OFFSET(i, j, m)] - Anew[OFFSET(i, j, m)]);
 }
-
 
 __global__ void calc_mean(double *A, double *Anew, int m, bool flag) {
     int i = blockDim.x * blockIdx.x + threadIdx.x;
@@ -64,12 +57,10 @@ __global__ void calc_mean(double *A, double *Anew, int m, bool flag) {
     }
 }
 
-
-void f_exception(std::string message, int row) {
-    printf("%s at the %d line\n", message, row);
+void f_exception(std::string message) {
+    printf("%s!\n", message.c_str());
     exit(-1);
 }
-
 
 int main(int argc, char **argv) {
     int m = 1024;
@@ -87,8 +78,8 @@ int main(int argc, char **argv) {
     po::store(po::parse_command_line(argc, argv, desc), vm);
     po::notify(vm);
 
-    std::unique_ptr<double[]> A_ptr(new double[m*m]);
-    std::unique_ptr<double[]> Anew_ptr(new double[m*m]);
+    std::unique_ptr<double[]> A_ptr(new double[m * m]);
+    std::unique_ptr<double[]> Anew_ptr(new double[m * m]);
     std::unique_ptr<double[]> subtr_temp_ptr(new double[m * m]);
 
     double* A = A_ptr.get();
@@ -132,13 +123,13 @@ int main(int argc, char **argv) {
     std::string cudaStreamCreate_err = "cudaStreamCreate error";
 
     dim3 grid(64, 64);
-    dim3 block(16, 16);
+    dim3 block(32, 32);
 
     cudaError_t cudaErr = cudaSuccess;
     cudaStream_t stream;
     
     cudaErr = cudaStreamCreate(&stream);
-    if (cudaErr) f_exception(cudaStreamCreate_err, 139);
+    if (cudaErr != cudaSuccess) f_exception(cudaStreamCreate_err);  
 
     cuda_unique_ptr<double> d_unique_ptr_error(cuda_new<double>(0), cuda_free<double>);
     cuda_unique_ptr<void> d_unique_ptr_temp_storage(cuda_new<void>(0), cuda_free<void>);
@@ -150,31 +141,31 @@ int main(int argc, char **argv) {
     // выделение памяти и перенос на устройство
     double *d_error_ptr = d_unique_ptr_error.get();
     cudaErr = cudaMalloc((void**)&d_error_ptr, sizeof(double));
-    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err, 149);
+    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err);
 
     double *d_A = d_unique_ptr_A.get();
     cudaErr = cudaMalloc((void **)&d_A, m * m * sizeof(double));
-    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err, 153);
+    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err);
 
     double *d_Anew = d_unique_ptr_Anew.get();
     cudaErr = cudaMalloc((void **)&d_Anew, m * m * sizeof(double));
-    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err, 157);
+    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err);
 
     double *d_subtr_temp = d_unique_ptr_subtr_temp.get();
     cudaErr = cudaMalloc((void **)&d_subtr_temp, m * m * sizeof(double));
-    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err, 161);
+    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err);
 
     cudaErr = cudaMemcpy(d_A, A, m * m * sizeof(double), cudaMemcpyHostToDevice);
-    if (cudaErr != cudaSuccess) f_exception(cudaMemcpy_err, 164);
+    if (cudaErr != cudaSuccess) f_exception(cudaMemcpy_err);
     cudaErr = cudaMemcpy(d_Anew, Anew, m * m * sizeof(double), cudaMemcpyHostToDevice);
-    if (cudaErr != cudaSuccess) f_exception(cudaMemcpy_err, 166);
+    if (cudaErr != cudaSuccess) f_exception(cudaMemcpy_err);
 
     // проверка памяти для редукции
     void *d_temp_storage = d_unique_ptr_temp_storage.get();
     size_t temp_storage_bytes = 0;
     cub::DeviceReduce::Max(d_temp_storage, temp_storage_bytes, d_Anew, d_error_ptr, m * m, stream);
     cudaErr = cudaMalloc((void**)&d_temp_storage, temp_storage_bytes);
-    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err, 173);
+    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err);
 
     printf("Jacobi relaxation Calculation: %d x %d mesh\n", m, m);
 
@@ -187,35 +178,35 @@ int main(int argc, char **argv) {
     nvtxRangePushA("while");
     auto start_time = std::chrono::high_resolution_clock::now();
     while (err > precision && iter < iter_max) {
-        if(!graph_created) {
+        if (!graph_created) {
             nvtxRangePushA("createGraph");
             // начало захвата операций на потоке stream
             cudaErr = cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal);
-            if (cudaErr != cudaSuccess) f_exception(cudaStreamBeginCapture_err, 190);
+            if (cudaErr != cudaSuccess) f_exception(cudaStreamBeginCapture_err);
             for (int i = 0; i < 100; i++)
                 calc_mean<<<grid, block, 0, stream>>>(d_A, d_Anew, m, (i % 2 == 1));
             // завершение захвата операций
             cudaErr = cudaStreamEndCapture(stream, &graph);
-            if (cudaErr != cudaSuccess) f_exception(cudaStreamEndCapture_err, 195);
+            if (cudaErr != cudaSuccess) f_exception(cudaStreamEndCapture_err);
             nvtxRangePop();
             // создаем исполняемый граф
             cudaErr = cudaGraphInstantiate(&instance, graph, NULL, NULL, 0);
-            if (cudaErr != cudaSuccess) f_exception(cudaGraphInstantiate_err, 199);
+            if (cudaErr != cudaSuccess) f_exception(cudaGraphInstantiate_err);
             graph_created = true;
         }
         // старт графа
         nvtxRangePushA("startGraph");
         // запускаем исполняемый граф
         cudaErr = cudaGraphLaunch(instance, stream);
-        if (cudaErr != cudaSuccess) f_exception(cudaGraphLaunch_err, 206);
+        if (cudaErr != cudaSuccess) f_exception(cudaGraphLaunch_err);
         nvtxRangePop();
         iter += 100;
-        if (iter % 100 == 0){
+        if (iter % 100 == 0) {
             nvtxRangePushA("calcError");
             subtr_arr<<<grid, block, 0, stream>>>(d_A, d_Anew, d_subtr_temp, m);
             cub::DeviceReduce::Max(d_temp_storage, temp_storage_bytes, d_subtr_temp, d_error_ptr, m * m, stream);
             cudaErr = cudaMemcpy(&err, d_error_ptr, sizeof(double), cudaMemcpyDeviceToHost);
-            if (cudaErr != cudaSuccess) f_exception(cudaMemcpy_err, 214);
+            if (cudaErr != cudaSuccess) f_exception(cudaMemcpy_err);
             nvtxRangePop();
         }
         if (iter % 1000 == 0)
@@ -228,7 +219,7 @@ int main(int argc, char **argv) {
 
     printf("total: %f s\n", runtime.count());
     cudaErr = cudaMemcpy(A, d_A, m * m * sizeof(double), cudaMemcpyDeviceToHost);
-    if (cudaErr) f_exception(cudaMemcpy_err, 227);
+    if (cudaErr != cudaSuccess) f_exception(cudaMemcpy_err);
 
     // std::ofstream out("out.txt");
     // for (int i = 0; i < m; i++){
@@ -236,6 +227,11 @@ int main(int argc, char **argv) {
     //         out << std::left << std::setw(10) << A[OFFSET(i, j, m)] << " ";
     //     out << std::endl;
     // }
+    
+    // освобождение ресурсов
+    cudaStreamDestroy(stream);
+    cudaGraphDestroy(graph);
+    cudaGraphExecDestroy(instance);
 
     return 0;
 }
