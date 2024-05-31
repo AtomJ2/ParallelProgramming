@@ -131,29 +131,21 @@ int main(int argc, char **argv) {
     cudaErr = cudaStreamCreate(&stream);
     if (cudaErr != cudaSuccess) f_exception(cudaStreamCreate_err);  
 
-    cuda_unique_ptr<double> d_unique_ptr_error(cuda_new<double>(0), cuda_free<double>);
+    cuda_unique_ptr<double> d_unique_ptr_error(cuda_new<double>(1), cuda_free<double>);
     cuda_unique_ptr<void> d_unique_ptr_temp_storage(cuda_new<void>(0), cuda_free<void>);
 
-    cuda_unique_ptr<double> d_unique_ptr_A(cuda_new<double>(0), cuda_free<double>);
-    cuda_unique_ptr<double> d_unique_ptr_Anew(cuda_new<double>(0), cuda_free<double>);
-    cuda_unique_ptr<double> d_unique_ptr_subtr_temp(cuda_new<double>(0), cuda_free<double>);
+    cuda_unique_ptr<double> d_unique_ptr_A(cuda_new<double>(m*m), cuda_free<double>);
+    cuda_unique_ptr<double> d_unique_ptr_Anew(cuda_new<double>(m*m), cuda_free<double>);
+    cuda_unique_ptr<double> d_unique_ptr_subtr_temp(cuda_new<double>(m*m), cuda_free<double>);
 
     // выделение памяти и перенос на устройство
-    double *d_error_ptr = d_unique_ptr_error.get();
-    cudaErr = cudaMalloc((void**)&d_error_ptr, sizeof(double));
-    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err);
-
+	double *d_error_ptr = d_unique_ptr_error.get();
     double *d_A = d_unique_ptr_A.get();
-    cudaErr = cudaMalloc((void **)&d_A, m * m * sizeof(double));
-    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err);
-
-    double *d_Anew = d_unique_ptr_Anew.get();
-    cudaErr = cudaMalloc((void **)&d_Anew, m * m * sizeof(double));
-    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err);
-
+	double *d_Anew = d_unique_ptr_Anew.get();
     double *d_subtr_temp = d_unique_ptr_subtr_temp.get();
-    cudaErr = cudaMalloc((void **)&d_subtr_temp, m * m * sizeof(double));
-    if (cudaErr != cudaSuccess) f_exception(cudaMalloc_err);
+
+    cudaErr = cudaMemcpy(d_A, A, m * m * sizeof(double), cudaMemcpyHostToDevice);
+    cudaErr = cudaMemcpy(d_Anew, Anew, m * m * sizeof(double), cudaMemcpyHostToDevice);
 
     cudaErr = cudaMemcpy(d_A, A, m * m * sizeof(double), cudaMemcpyHostToDevice);
     if (cudaErr != cudaSuccess) f_exception(cudaMemcpy_err);
